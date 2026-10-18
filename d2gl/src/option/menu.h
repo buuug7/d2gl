@@ -47,6 +47,10 @@ class Menu {
 	std::unordered_map<Color, ImVec4> m_colors;
 	Options m_options;
 	bool m_ignore_font = false;
+	float m_scale = 1.0f;
+
+	inline float px(float v) const { return v * m_scale; }
+	inline ImVec2 px(float x, float y) const { return { x * m_scale, y * m_scale }; }
 
 	Menu();
 	~Menu() = default;

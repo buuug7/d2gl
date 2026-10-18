@@ -69,8 +69,45 @@ static const ImWchar * buildSimplifiedChineseRange()
     return &full_ranges[0];
 }
 
+static float getMenuScale()
+{
+	typedef UINT(WINAPI * GetDpiForWindow_t)(HWND);
+	static auto get_dpi_for_window = (GetDpiForWindow_t)helpers::getProcOffset(DLL_USER32, "GetDpiForWindow");
+
+	// Windows DPI alone sizes the menu a little too large at 150%-200% scaling.
+	constexpr float dpi_bias = 0.85f;
+
+	UINT dpi = 0;
+	if (get_dpi_for_window && App.hwnd)
+		dpi = get_dpi_for_window(App.hwnd);
+	if (!dpi) {
+		const HDC hdc = GetDC(nullptr);
+		if (hdc) {
+			dpi = (UINT)GetDeviceCaps(hdc, LOGPIXELSX);
+			ReleaseDC(nullptr, hdc);
+		}
+	}
+	if (!dpi)
+		dpi = 96;
+
+	const float dpi_scale = (float)dpi / 96.0f * dpi_bias;
+
+	// Resolution scaling keeps the menu readable on high-res displays running at
+	// 100% DPI, where the DPI value alone would leave it tiny.
+	const glm::vec2 window = { (float)App.window.size.x, (float)App.window.size.y };
+	const float res_scale = glm::min(window.x / 1280.0f, window.y / 900.0f);
+
+	// Keep the menu proportionate and inside the window on small/high-DPI screens.
+	const float max_scale = glm::min(window.x / 1000.0f, window.y / 800.0f);
+
+	float scale = glm::min(glm::max(dpi_scale, res_scale), max_scale);
+	return glm::max(scale, 1.0f);
+}
+
 Menu::Menu()
 {
+	m_scale = getMenuScale();
+
 	m_colors[Color::Default] = ImColor(199, 179, 119);
 	m_colors[Color::Orange] = ImColor(255, 150, 0);
 	m_colors[Color::White] = ImColor(255, 255, 255, 180);
@@ -121,6 +158,7 @@ Menu::Menu()
 	style.GrabRounding = 1.0f;
 	style.GrabMinSize = 30.0f;
 	style.DisabledAlpha = 0.4f;
+	style.ScaleAllSizes(m_scale);
 
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
@@ -131,15 +169,15 @@ Menu::Menu()
 	auto glyphs = buildSimplifiedChineseRange();
 
 	io.Fonts->AddFontDefault();
-	m_fonts[20] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 20.0f,
+	m_fonts[20] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 20.0f * m_scale,
 								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[17] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 17.0f,
+	m_fonts[17] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 17.0f * m_scale,
 								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[15] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 15.0f,
+	m_fonts[15] = font1.size ? io.Fonts->AddFontFromMemoryTTF((void*)font1.data, font1.size, 15.0f * m_scale,
 								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[14] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 14.0f,
+	m_fonts[14] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 14.0f * m_scale,
 								  nullptr, glyphs) : io.Fonts->Fonts[0];
-	m_fonts[12] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 12.0f,
+	m_fonts[12] = font2.size ? io.Fonts->AddFontFromMemoryTTF((void*)font2.data, font2.size, 12.0f * m_scale,
 								  nullptr, glyphs) : io.Fonts->Fonts[0];
 
 	App.menu_title += (ISGLIDE3X() ? " (Glide / " : " (DDraw / ");
@@ -186,18 +224,18 @@ void Menu::draw()
 	App.context->imguiStartFrame();
 
 	ImVec2 window_pos = { (float)App.window.size.x * 0.5f, (float)App.window.size.y * 0.5f };
-	ImVec2 max_size = { (float)App.window.size.x - 20.0f, (float)App.window.size.y - 20.0f };
+	ImVec2 max_size = { (float)App.window.size.x - px(20.0f), (float)App.window.size.y - px(20.0f) };
 	static ImGuiWindowFlags window_flags =
 		ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize |
 		ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse;
 	static ImGuiCond window_pos_cond = ImGuiCond_Appearing;
 
-	ImGui::SetNextWindowSize({ 680.0f, 600.0f }, ImGuiCond_Always);
-	ImGui::SetNextWindowSizeConstraints({ 10.0f, 10.0f }, max_size);
+	ImGui::SetNextWindowSize(px(680.0f, 600.0f), ImGuiCond_Always);
+	ImGui::SetNextWindowSizeConstraints(px(10.0f, 10.0f), max_size);
 	ImGui::SetNextWindowPos(window_pos, window_pos_cond, ImVec2(0.5f, 0.5f));
 	ImGui::SetNextWindowBgAlpha(0.90f);
 	ImGui::PushFont(m_fonts[20]);
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 10.0f, 10.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(10.0f, 10.0f));
 	ImGui::Begin(App.menu_title.c_str(), &m_visible, window_flags);
 	ImGui::PopStyleVar();
 	window_pos_cond = ImGuiCond_Appearing;
@@ -207,11 +245,11 @@ void Menu::draw()
 	static int active_tab = 0;
 
 	ImGui::PushStyleColor(ImGuiCol_Border, col);
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 16.0f, 10.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(16.0f, 10.0f));
 	if (ImGui::BeginTabBar("tabs", ImGuiTabBarFlags_None)) {
 		ImGui::PopStyleVar();
 		ImGui::PopStyleColor();
-		ImGui::SetCursorPos({ 530.0f, 74.0f });
+		ImGui::SetCursorPos({ ImGui::GetWindowWidth() - px(150.0f), px(74.0f) });
 		ImGui::PushFont(m_fonts[14]);
 		ImGui::PushStyleColor(ImGuiCol_Text, m_colors[Color::Gray]);
 		ImGui::Text("D2GL v%s by Bayaraa.", App.version_str.c_str());
@@ -227,7 +265,7 @@ void Menu::draw()
 			ImGui::BeginDisabled(m_options.window.fullscreen);
 				drawCombo_m("窗口大小", App.resolutions, "", false, 17, resolutions);
 				checkChanged(App.resolutions.items[App.resolutions.selected].value != m_options.window.size_save);
-				ImGui::Dummy({ 0.0f, 1.0f });
+				ImGui::Dummy({ 0.0f, px(1.0f) });
 				ImGui::BeginDisabled(App.resolutions.selected);
 					drawInput2("##ws", "输入自定义宽度和高度(最小值: 800x600)", (glm::ivec2*)(&m_options.window.size_save), { 800, 600 }, { App.desktop_resolution.z, App.desktop_resolution.w });
 					checkChanged(!App.resolutions.selected && App.window.size != m_options.window.size_save);
@@ -238,7 +276,7 @@ void Menu::draw()
 				drawSeparator();
 				drawCheckbox_m("窗口居中", m_options.window.centered, "在桌面上居中窗口.", centered_window);
 				checkChanged(m_options.window.centered != App.window.centered);
-				ImGui::Dummy({ 0.0f, 2.0f });
+				ImGui::Dummy({ 0.0f, px(2.0f) });
 				ImGui::BeginDisabled(m_options.window.centered);
 					drawInput2("##wp", "窗口位置是从左上角开始的", &m_options.window.position, { App.desktop_resolution.x, App.desktop_resolution.y }, { App.desktop_resolution.z, App.desktop_resolution.w });
 					checkChanged(!m_options.window.centered && App.window.position != m_options.window.position);
@@ -324,9 +362,9 @@ void Menu::draw()
 		}
 		if (tabBegin("图像", 1, &active_tab)) {
 			drawCombo_m("高级着色器预设", App.shader.presets, "", true, 17, shader_preset);
-			ImGui::SameLine(0.0f, 4.0f);
+			ImGui::SameLine(0.0f, px(4.0f));
 			ImGui::BeginDisabled(App.shader.selected == App.shader.presets.selected);
-				if (drawButton("应用", { 100.0f, 0.0f }))
+				if (drawButton("应用", { px(100.0f), 0.0f }))
 					App.shader.selected = App.shader.presets.selected;
 			ImGui::EndDisabled();
 			drawDescription("RetroArch's slang shader preset files (.slangp).", m_colors[Color::Gray]);
@@ -376,7 +414,7 @@ void Menu::draw()
 				App.context->getCommandBuffer()->resize();
 				saveBool("Graphic", "stretched_horizontal", App.viewport.stretched.x);
 			}
-			ImGui::SameLine(150.0f);
+			ImGui::SameLine(px(150.0f));
 			drawCheckbox_m("垂直", App.viewport.stretched.y, "", stretched_vertical)
 			{
 				App.context->getCommandBuffer()->resize();
@@ -415,7 +453,7 @@ void Menu::draw()
 					ImGui::SameLine(20.0f);
 					drawCheckbox_m("文字悬浮", App.mini_map.text_over, "", mini_map_text_over)
 						saveBool("Feature", "mini_map_text_over", App.mini_map.text_over);
-					ImGui::Dummy({ 0.0f, 2.0f });
+					ImGui::Dummy({ 0.0f, px(2.0f) });
 					drawSlider_m(int, "", App.mini_map.width, "%d", "小地图宽度", mini_map_width_val)
 						saveInt("Feature", "mini_map_width", App.mini_map.width.value);
 					drawSlider_m(int, "", App.mini_map.height, "%d", "小地图高度", mini_map_height_val)
@@ -430,7 +468,7 @@ void Menu::draw()
 					saveBool("Feature", "hd_orbs", App.hd_orbs.active);
 				ImGui::Spacing();
 				ImGui::Spacing();
-				ImGui::SameLine(36.0f);
+				ImGui::SameLine(px(36.0f));
 				ImGui::BeginDisabled(!App.hd_orbs.active);
 					drawCheckbox_m("Centered", App.hd_orbs.centered, "", hd_orbs_centered)
 						saveBool("Feature", "hd_orbs_centered", App.hd_orbs.centered);
@@ -496,9 +534,9 @@ void Menu::draw()
 			char result[2100] = { "" };
 			const auto& str = modules::HDText::Instance().getAllFontMetricString();
 			strcpy_s(result, str.c_str());
-			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f, 7.0f });
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(8.0f, 7.0f));
 			ImGui::SetNextItemWidth(ImGui::GetWindowContentRegionWidth());
-			ImGui::InputTextMultiline("##result", result, IM_ARRAYSIZE(result), { 0, 249 }, ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoHorizontalScroll);
+			ImGui::InputTextMultiline("##result", result, IM_ARRAYSIZE(result), { 0, px(249.0f) }, ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_NoHorizontalScroll);
 			ImGui::PopStyleVar();
 			if (ImGui::Button("Copy Text"))
 				ImGui::SetClipboardText(result);
@@ -521,11 +559,11 @@ void Menu::draw()
 	}
 	ImGui::PopFont();
 	if (active_tab != 3) {
-		ImGui::SetCursorPos({ 16.0f, 500.0f });
-		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 0.0f, 0.0f });
+		ImGui::SetCursorPos({ px(16.0f), ImGui::GetWindowHeight() - px(100.0f) });
+		ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(0.0f, 0.0f));
 		ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 		ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
-		ImGui::BeginChildFrame(ImGui::GetID("#wiki"), { 300.0f, 24.0f }, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
+		ImGui::BeginChildFrame(ImGui::GetID("#wiki"), px(300.0f, 24.0f), ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
 		ImGui::PopStyleVar(3);
 		ImGui::PushFont(m_fonts[15]);
 		if (ImGui::Button(" 打开配置 Wiki 页面 >"))
@@ -545,7 +583,7 @@ void Menu::draw()
 bool Menu::tabBegin(const char* title, int tab_num, int* active_tab)
 {
 	static const ImVec4 inactive_col = ImColor(100, 100, 100, 200);
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 16.0f, 10.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(16.0f, 10.0f));
 	ImGui::PushStyleColor(ImGuiCol_Text, tab_num == *active_tab ? m_colors[Color::Orange] : inactive_col);
 	bool ret = ImGui::BeginTabItem(title);
 	ImGui::PopStyleColor();
@@ -564,11 +602,11 @@ void Menu::tabEnd()
 
 void Menu::childBegin(const char* id, bool half_width, bool with_nav)
 {
-	ImVec2 size = { 0.0f, with_nav ? -60.0f : 0.0f };
+	ImVec2 size = { 0.0f, with_nav ? -px(60.0f) : 0.0f };
 	if (half_width)
-		size.x = ImGui::GetWindowContentRegionWidth() / 2.0f - 8.0f;
+		size.x = ImGui::GetWindowContentRegionWidth() / 2.0f - px(8.0f);
 
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 0.0f, 0.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(0.0f, 0.0f));
 	ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
 	ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 0.0f);
 	ImGui::BeginChildFrame(ImGui::GetID(id), size, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground);
@@ -578,7 +616,7 @@ void Menu::childBegin(const char* id, bool half_width, bool with_nav)
 void Menu::childSeparator(const char* id, bool with_nav)
 {
 	childEnd();
-	ImGui::SameLine(0.0f, 16.0f);
+	ImGui::SameLine(0.0f, px(16.0f));
 	childBegin(id, true, with_nav);
 }
 
@@ -594,9 +632,9 @@ bool Menu::drawNav(const char* btn_label)
 	ImGui::PushStyleColor(ImGuiCol_Separator, sep_col);
 	ImGui::PushStyleColor(ImGuiCol_Text, m_colors[Color::Orange]);
 	drawSeparator(6.0f);
-	ImGui::Dummy({ ImGui::GetWindowContentRegionWidth() - 200.0f, 0.0f });
+	ImGui::Dummy({ ImGui::GetWindowContentRegionWidth() - px(200.0f), 0.0f });
 	ImGui::SameLine();
-	ret = ImGui::Button(btn_label, { 192.0f, 36.0f });
+	ret = ImGui::Button(btn_label, px(192.0f, 36.0f));
 	ImGui::PopStyleColor(2);
 	return ret;
 }
@@ -625,14 +663,14 @@ bool Menu::drawCombo(const char* title, Select<T>* select, const char* desc, boo
 	bool ret = false;
 
 	drawLabel(title, m_colors[Color::Orange], 17);
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f, 5.0f });
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 8.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(8.0f, 5.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, px(0.0f, 8.0f));
 	if (!m_ignore_font)
 		ImGui::PushFont(m_fonts[size]);
-	ImGui::SetNextItemWidth(ImGui::GetWindowContentRegionWidth() - (have_btn ? 104.0f : 0.0f));
+	ImGui::SetNextItemWidth(ImGui::GetWindowContentRegionWidth() - (have_btn ? px(104.0f) : 0.0f));
 	auto& selected = select->items[select->selected];
 	if (ImGui::BeginCombo(("##" + std::string(title)).c_str(), selected.name.c_str(), ImGuiComboFlags_PopupAlignLeft | ImGuiComboFlags_HeightLargest)) {
-		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 8.0f, 8.0f });
+		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, px(8.0f, 8.0f));
 		for (size_t i = 0; i < select->items.size(); i++) {
 			const bool is_selected = (select->selected == i);
 			if (is_selected)
@@ -661,12 +699,12 @@ bool Menu::drawCombo(const char* title, Select<T>* select, const char* desc, boo
 
 void Menu::drawInput2(const std::string& id, const char* desc, glm::ivec2* input, glm::ivec2 min, glm::ivec2 max)
 {
-	float width = ImGui::GetWindowContentRegionWidth() / 2 - 2.0f;
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f, 5.0f });
+	float width = ImGui::GetWindowContentRegionWidth() / 2 - px(2.0f);
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(8.0f, 5.0f));
 	ImGui::PushFont(m_fonts[17]);
 	ImGui::SetNextItemWidth(width);
 	ImGui::InputInt((id + "x").c_str(), &input->x, 0, 0);
-	ImGui::SameLine(0.0f, 4.0f);
+	ImGui::SameLine(0.0f, px(4.0f));
 	ImGui::SetNextItemWidth(width);
 	ImGui::InputInt((id + "y").c_str(), &input->y, 0, 0);
 	ImGui::PopFont();
@@ -689,13 +727,13 @@ bool Menu::drawSlider(const std::string& id, const char* title, Range<T>* range,
 {
 	drawLabel(title, m_colors[Color::Orange]);
 	ImGuiDataType type = strcmp(typeid(T).name(), "int") == 0 ? ImGuiDataType_S32 : ImGuiDataType_Float;
-	ImGui::SetNextItemWidth(80.0f);
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 4.0f, 3.0f });
+	ImGui::SetNextItemWidth(px(80.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(4.0f, 3.0f));
 	if (!m_ignore_font)
 		ImGui::PushFont(m_fonts[15]);
 	ImGui::InputScalar(("##" + id).c_str(), type, &range->value, 0, 0, format);
-	ImGui::SameLine(0.0f, 4.0f);
-	ImGui::SetNextItemWidth(ImGui::GetWindowContentRegionWidth() - 84.0f);
+	ImGui::SameLine(0.0f, px(4.0f));
+	ImGui::SetNextItemWidth(ImGui::GetWindowContentRegionWidth() - px(84.0f));
 	ImGui::SliderScalar(id.c_str(), type, &range->value, &range->min, &range->max, "", ImGuiSliderFlags_NoInput);
 	if (!m_ignore_font)
 		ImGui::PopFont();
@@ -719,8 +757,8 @@ bool Menu::drawButton(const char* label, const ImVec2& btn_size, int size)
 	bool ret = false;
 
 	ImGui::PushStyleColor(ImGuiCol_Text, m_colors[Color::Orange]);
-	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, { 8.0f, 5.0f });
-	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, { 0.0f, 8.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, px(8.0f, 5.0f));
+	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, px(0.0f, 8.0f));
 	if (!m_ignore_font)
 		ImGui::PushFont(m_fonts[size]);
 	if (ImGui::Button(label, btn_size))
@@ -734,12 +772,12 @@ bool Menu::drawButton(const char* label, const ImVec2& btn_size, int size)
 
 void Menu::drawSeparator(float y_padd, float alpha)
 {
-	ImGui::Dummy({ 0.0f, y_padd - 1.0f });
+	ImGui::Dummy({ 0.0f, px(y_padd - 1.0f) });
 	ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, { 0.0f, 0.0f });
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, px(0.0f, 0.0f));
 	ImGui::Separator();
 	ImGui::PopStyleVar(2);
-	ImGui::Dummy({ 0.0f, y_padd });
+	ImGui::Dummy({ 0.0f, px(y_padd) });
 }
 
 void Menu::drawLabel(const char* title, const ImVec4& color, int size)
