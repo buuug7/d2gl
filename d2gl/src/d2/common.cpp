@@ -115,6 +115,14 @@ getUnitRoom_t getUnitRoom = (getUnitRoom_t)getProc((DLL_D2COMMON), (), (), (), (
 getLevelNoByRoom_t getLevelNoByRoom = (getLevelNoByRoom_t)getProc((DLL_D2COMMON), (), (), (), (), (), (), (-10691), ());
 uintptr_t getLevelName_Fn = getProc((DLL_D2CLIENT), (0x88420), (0x839F0), (0x9DC10), (0x61AA0), (0x8B1A0), (0xBE240), (0x18250), (0x53E70));
 
+// Treasure class table accessors are 1.13c only for now.
+getTreasureClasses_t getTreasureClasses = isVer(V_113c) ? (getTreasureClasses_t)getProc((DLL_D2COMMON), (), (), (), (), (), (-10634), (), ()) : nullptr;
+getItemTxt_t getItemTxt = isVer(V_113c) ? (getItemTxt_t)getProc((DLL_D2COMMON), (), (), (), (), (), (-10695), (), ()) : nullptr;
+getLevelTxt_t getLevelTxt = isVer(V_113c) ? (getLevelTxt_t)getProc((DLL_D2COMMON), (), (), (), (), (), (-10014), (), ()) : nullptr;
+getSuperUniqueTxt_t getSuperUniqueTxt = isVer(V_113c) ? (getSuperUniqueTxt_t)getProc((DLL_D2COMMON), (), (), (), (), (), (-10038), (), ()) : nullptr;
+uint32_t* expansion = isVer(V_113c) ? (uint32_t*)getProc((DLL_D2CLIENT), (), (), (), (), (), (0x119854), (), ()) : nullptr;
+uint8_t* difficulty = isVer(V_113c) ? (uint8_t*)getProc((DLL_D2CLIENT), (), (), (), (), (), (0x11C390), (), ()) : nullptr;
+
 // d2client + 0x291F8 : 1 2 3 4 (potion keys)
 // d2client + 0x27708 : life XX/XX
 // d2client + 0x277C7 : Mana XX/XX

@@ -454,6 +454,9 @@ void Menu::draw()
 			drawCheckbox_m("显示怪物抗性", App.show_monster_res, "在怪物生命条上显示抗性", show_monster_res)
 				saveBool("Feature", "show_monster_res", App.show_monster_res);
 			drawSeparator();
+			drawCheckbox_m("显示怪物TC", App.show_monster_tc, "在怪物生命条上显示财宝等级 (tc) 和符文财宝等级 (rtc)", show_monster_tc)
+				saveBool("Feature", "show_monster_tc", App.show_monster_tc);
+			drawSeparator();
 			drawCheckbox_m("显示物品数量", App.show_item_quantity, "在图标左下角显示商品数量", show_item_quantity)
 				saveBool("Feature", "show_item_quantity", App.show_item_quantity);
 			drawSeparator();

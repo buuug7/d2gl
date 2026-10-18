@@ -47,6 +47,7 @@ namespace d2gl::d2 {
 
 #define STAT_HP 6
 #define STAT_MAXHP 7
+#define STAT_LEVEL 12
 #define STAT_DMGREDUCTIONPCT 36
 #define STAT_MAGICDMGREDUCTIONPCT 37
 #define STAT_FIRERESIST 39
@@ -244,13 +245,67 @@ struct PlayerData {
 	char szName[16];
 };
 
-struct MonStatsTxt {
-	DWORD _1[19];
-	BYTE bAlign;
+struct MonsterTxt {
+	WORD hcIdx;
+	WORD hcIdx2;
+	BYTE _1[2];
+	WORD wLocaleTxtNo;
+	WORD wFlag;
+	WORD _2;
+	BYTE nFlags;
+	BYTE _3[0x86 - 0x0D];
+	WORD Tcs[3][4];
+};
+
+struct ItemTxt {
+	BYTE _1[0x80];
+	char szCode[20];
+	BYTE _2[0x11E - 0x94];
+	BYTE nType;
+};
+
+struct TreasureClassItem {
+	DWORD _1[2];
+	DWORD dwThingNo;
+	DWORD dwFlags;
+	DWORD _3[3];
+};
+
+struct TreasureClass {
+	WORD wGroup;
+	WORD wLevel;
+	DWORD dwItemNums;
+	DWORD _1[8];
+	TreasureClassItem* pItems;
+};
+
+struct SuperUniqueTxt {
+	WORD wUniqueNo;
+	WORD wLocaleTxtNo;
+	DWORD wMonIdx;
+	DWORD dwUniqueNo;
+	DWORD dwMod1;
+	DWORD dwMod2;
+	DWORD dwMod3;
+	DWORD dwMonSound;
+	DWORD dwMinGrp;
+	DWORD dwMaxGrp;
+	DWORD _1;
+	BYTE Utrans[4];
+	WORD Tcs[4];
+};
+
+struct LevelTxt {
+	WORD wLevelNo;
+	BYTE nPal;
+	BYTE nAct;
+	DWORD _1[2];
+	DWORD dwWarpDist;
+	WORD nMonLv[2][3];
 };
 
 struct MonsterData110 {
-	MonStatsTxt* pMonStatsTxt;
+	MonsterTxt* pMonStatsTxt;
 	BYTE Components[16];
 	WORD NameSeed;
 	struct {

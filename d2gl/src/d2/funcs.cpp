@@ -452,4 +452,169 @@ void levelEntryText()
 	modules::HDText::Instance().startEntryText();
 }
 
+namespace {
+
+constexpr int TC_COUNT = 1014;
+
+struct MonsterTcInfo {
+	WORD wGroup = 0;
+	WORD wLevel = 0;
+	int nTc = 0;
+	int nRtc = 0;
+	bool init = false;
+	bool visiting = false;
+};
+
+MonsterTcInfo g_monster_tcs[TC_COUNT];
+bool g_tc_init = false;
+WORD g_tc_group_offset = 0;
+
+int getRuneTc(DWORD item_no)
+{
+	const auto item_txt = getItemTxt(item_no);
+	if (!item_txt || item_txt->nType != 74 || item_txt->szCode[0] != 'r')
+		return 0;
+
+	const int rune_no = (item_txt->szCode[1] - '0') * 10 + (item_txt->szCode[2] - '0');
+	return rune_no / 2 + rune_no % 2;
+}
+
+void calculateHighestTc(int tcno)
+{
+	auto& info = g_monster_tcs[tcno];
+	if (info.visiting)
+		return;
+
+	const auto tc = getTreasureClasses((WORD)tcno, 0);
+	if (!tc)
+		return;
+
+	info.visiting = true;
+	info.wLevel = tc->wLevel;
+	info.wGroup = tc->wGroup == 0 ? 0 : tc->wGroup - g_tc_group_offset;
+
+	for (DWORD i = 0; i < tc->dwItemNums; i++) {
+		const auto& item = tc->pItems[i];
+		if (item.dwFlags & 4) {
+			if (item.dwThingNo > 0 && item.dwThingNo <= 160) {
+				const int group_no = (item.dwThingNo - 1) / 32;
+				const int tc_level = (((item.dwThingNo - 1) % 32) + 1) * 3;
+				if (group_no == 1 && tc_level > info.nTc)
+					info.nTc = tc_level;
+			} else if (item.dwThingNo < TC_COUNT) {
+				if (!g_monster_tcs[item.dwThingNo].init)
+					calculateHighestTc(item.dwThingNo);
+				if (g_monster_tcs[item.dwThingNo].nTc > info.nTc)
+					info.nTc = g_monster_tcs[item.dwThingNo].nTc;
+				if (g_monster_tcs[item.dwThingNo].nRtc > info.nRtc)
+					info.nRtc = g_monster_tcs[item.dwThingNo].nRtc;
+			}
+		} else {
+			const int rune_tc = getRuneTc(item.dwThingNo);
+			if (rune_tc > info.nRtc)
+				info.nRtc = rune_tc;
+		}
+	}
+
+	info.visiting = false;
+	info.init = true;
+}
+
+void initTcList()
+{
+	if (g_tc_init)
+		return;
+
+	const auto tc = getTreasureClasses(262, 0);
+	if (!tc)
+		return;
+
+	g_tc_group_offset = tc->wGroup - 2;
+	for (int i = 1; i < TC_COUNT; i++)
+		calculateHighestTc(i);
+
+	g_tc_init = true;
+}
+
+const MonsterTcInfo* getTcLevel(WORD tcno, DWORD mlvl)
+{
+	int idx = tcno;
+	if (idx >= TC_COUNT)
+		return nullptr;
+
+	if (g_monster_tcs[idx].wGroup > 0 && mlvl > g_monster_tcs[idx].wLevel) {
+		const WORD group = g_monster_tcs[idx].wGroup;
+		while (idx + 1 < TC_COUNT && g_monster_tcs[idx + 1].wGroup == group) {
+			idx++;
+			if (mlvl <= g_monster_tcs[idx].wLevel)
+				break;
+		}
+	}
+	return &g_monster_tcs[idx];
+}
+
+}
+
+bool getMonsterTreasureClass(UnitAny* unit, int& tc, int& rtc)
+{
+	if (!getTreasureClasses || !getItemTxt || !getLevelTxt || !getSuperUniqueTxt || !expansion || !difficulty)
+		return false;
+	if (isVer(V_109d) || !unit || unit->dwType != UnitType::Monster)
+		return false;
+
+	initTcList();
+	if (!g_tc_init)
+		return false;
+
+	const auto mon = unit->v110.pMonsterData;
+	const auto mon_txt = mon->pMonStatsTxt;
+	if (!mon_txt)
+		return false;
+
+	const int diff = (int)*difficulty;
+	const int exp = (int)*expansion;
+	if (diff < 0 || diff > 2 || exp < 0 || exp > 1)
+		return false;
+
+	const bool txt_boss = (mon_txt->nFlags & 0x40) != 0;
+	int lvl;
+	if (!txt_boss && diff && exp) {
+		const auto level_txt = getLevelTxt((DWORD)*level_no);
+		lvl = level_txt ? (int)level_txt->nMonLv[exp][diff] : (int)getUnitStat(unit, STAT_LEVEL);
+	} else {
+		lvl = (int)getUnitStat(unit, STAT_LEVEL);
+	}
+
+	const bool skip_level_bonus = txt_boss && mon->wUniqueNo == 0 && !(mon_txt->hcIdx >= 546 && mon_txt->hcIdx <= 550);
+	if (!skip_level_bonus) {
+		if (mon->fChamp)
+			lvl += 2;
+		else if (mon->fBoss || mon->fMinion)
+			lvl += 3;
+	}
+	if (lvl < 0)
+		lvl = 0;
+
+	WORD tcno;
+	if (mon->fSuperUniq) {
+		const auto super_unique = getSuperUniqueTxt(mon->wUniqueNo);
+		if (!super_unique)
+			return false;
+		tcno = super_unique->Tcs[diff];
+	} else {
+		const int mode = mon->fChamp ? 1 : ((mon->fBoss || mon->fMinion) ? 2 : 0);
+		tcno = mon_txt->Tcs[diff][mode];
+	}
+	if (tcno == 0 || tcno >= TC_COUNT)
+		return false;
+
+	const auto info = getTcLevel(tcno, (DWORD)lvl);
+	if (!info)
+		return false;
+
+	tc = info->nTc;
+	rtc = info->nRtc;
+	return true;
+}
+
 }

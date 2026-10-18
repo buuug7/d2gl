@@ -43,6 +43,7 @@ char* getPlayerName(UnitAny* unit);
 MonsterType getMonsterType(UnitAny* unit);
 wchar_t* getMonsterName(UnitAny* unit);
 bool isMercUnit(UnitAny* unit);
+bool getMonsterTreasureClass(UnitAny* unit, int& tc, int& rtc);
 
 ItemQuality getItemQuality(UnitAny* unit);
 BYTE getItemLocation(UnitAny* unit);

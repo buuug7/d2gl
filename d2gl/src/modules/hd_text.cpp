@@ -856,6 +856,14 @@ void HDText::drawMonsterHealthBar(d2::UnitAny* unit)
 	wchar_t full_name[256];
 	wcsncpy_s(full_name, name, _TRUNCATE);
 
+	if (App.show_monster_tc) {
+		int tc = 0, rtc = 0;
+		if (d2::getMonsterTreasureClass(unit, tc, rtc)) {
+			_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" (tc%d)", tc);
+			_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" (rtc%d)", rtc);
+		}
+	}
+
 	if (App.show_monster_res) {
 		const int dr = (int)d2::getUnitStat(unit, STAT_DMGREDUCTIONPCT);
 		const int mr = (int)d2::getUnitStat(unit, STAT_MAGICDMGREDUCTIONPCT);

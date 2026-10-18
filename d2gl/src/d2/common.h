@@ -42,6 +42,10 @@ typedef uint32_t(__stdcall* getUnitStat109d_t)(UnitAny* unit, uint32_t stat);
 typedef uint32_t(__stdcall* getUnitState_t)(UnitAny* unit, uint32_t state_no);
 typedef Room1*(__stdcall* getUnitRoom_t)(UnitAny* unit);
 typedef int(__stdcall* getLevelNoByRoom_t)(Room1* room);
+typedef TreasureClass*(__stdcall* getTreasureClasses_t)(WORD tcno, DWORD lvlno);
+typedef ItemTxt*(__stdcall* getItemTxt_t)(DWORD itemno);
+typedef LevelTxt*(__stdcall* getLevelTxt_t)(DWORD levelno);
+typedef SuperUniqueTxt*(__stdcall* getSuperUniqueTxt_t)(DWORD unique_no);
 
 typedef void(__stdcall* clearScreen_t)(bool partial);
 typedef void(__stdcall* drawImage_t)(CellContext* cell, int x, int y, uint32_t gamma, int draw_mode, uint8_t* palette);
@@ -155,6 +159,13 @@ extern getUnitState_t getUnitState_Fn;
 extern getUnitRoom_t getUnitRoom;
 extern getLevelNoByRoom_t getLevelNoByRoom;
 extern uintptr_t getLevelName_Fn;
+extern getTreasureClasses_t getTreasureClasses;
+extern getItemTxt_t getItemTxt;
+extern getLevelTxt_t getLevelTxt;
+extern getSuperUniqueTxt_t getSuperUniqueTxt;
+
+extern uint32_t* expansion;
+extern uint8_t* difficulty;
 
 extern UnitAny* currently_drawing_unit;
 extern uint32_t currently_drawing_weather_particles;
