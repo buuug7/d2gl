@@ -853,6 +853,36 @@ void HDText::drawMonsterHealthBar(d2::UnitAny* unit)
 	const auto max_hp = d2::getUnitStat(unit, STAT_MAXHP);
 	const auto type = d2::getMonsterType(unit);
 
+	wchar_t full_name[256];
+	wcsncpy_s(full_name, name, _TRUNCATE);
+
+	if (App.show_monster_res) {
+		const int dr = (int)d2::getUnitStat(unit, STAT_DMGREDUCTIONPCT);
+		const int mr = (int)d2::getUnitStat(unit, STAT_MAGICDMGREDUCTIONPCT);
+		const int fr = (int)d2::getUnitStat(unit, STAT_FIRERESIST);
+		const int lr = (int)d2::getUnitStat(unit, STAT_LIGHTNINGRESIST);
+		const int cr = (int)d2::getUnitStat(unit, STAT_COLDRESIST);
+		const int pr = (int)d2::getUnitStat(unit, STAT_POISONRESIST);
+
+		if (dr || mr || fr || lr || cr || pr) {
+			wcsncat_s(full_name, L" (Res:", _TRUNCATE);
+			if (dr)
+				_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" ÿc%cD%d", L'\x37', dr);
+			if (mr)
+				_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" ÿc%cM%d", L'\x38', mr);
+			if (fr)
+				_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" ÿc%cF%d", L'\x31', fr);
+			if (lr)
+				_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" ÿc%cL%d", L'\x39', lr);
+			if (cr)
+				_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" ÿc%cC%d", L'\x33', cr);
+			if (pr)
+				_snwprintf_s(full_name + wcslen(full_name), 256 - wcslen(full_name), _TRUNCATE, L" ÿc%cP%d", L'\x32', pr);
+			wcsncat_s(full_name, L")", _TRUNCATE);
+		}
+	}
+	name = full_name;
+
 	const auto font = getFont(1);
 	font->setShadow(2);
 	font->setMasking(false);
@@ -899,31 +929,6 @@ void HDText::drawMonsterHealthBar(d2::UnitAny* unit)
 	glm::vec2 text_pos = { center - text_size.x / 2, bar_pos.y + 15.8f };
 	font->drawText(name, text_pos, g_text_colors.at(text_color));
 	m_hovered_unit.color = 0;
-
-	if (App.show_monster_res) {
-		const auto s1 = d2::getUnitStat(unit, STAT_DMGREDUCTIONPCT);
-		const wchar_t* i1 = s1 >= 100 ? L"⛦" : L"";
-		const auto s2 = d2::getUnitStat(unit, STAT_MAGICDMGREDUCTIONPCT);
-		const wchar_t* i2 = s2 >= 100 ? L"⛦" : L"";
-		const auto s3 = d2::getUnitStat(unit, STAT_FIRERESIST);
-		const wchar_t* i3 = s3 >= 100 ? L"⛦" : L"";
-		const auto s4 = d2::getUnitStat(unit, STAT_LIGHTNINGRESIST);
-		const wchar_t* i4 = s4 >= 100 ? L"⛦" : L"";
-		const auto s5 = d2::getUnitStat(unit, STAT_COLDRESIST);
-		const wchar_t* i5 = s5 >= 100 ? L"⛦" : L"";
-		const auto s6 = d2::getUnitStat(unit, STAT_POISONRESIST);
-		const wchar_t* i6 = s6 >= 100 ? L"⛦" : L"";
-
-		static wchar_t res_str[100];
-		swprintf_s(res_str, L"ÿc\x34%s%d ÿc\x03⌁ ÿc\x38%s%d ÿc\x03⌁ ÿc\x31%s%d ÿc\x03⌁ ÿc\x39%s%d ÿc\x03⌁ ÿc\x33%s%d ÿc\x03⌁ ÿc\x32%s%d", i1, s1, i2, s2, i3, s3, i4, s4, i5, s5, i6, s6);
-
-		const auto font = getFont(20);
-		font->setShadow(1);
-		font->setMasking(false);
-
-		const auto text_size = font->getTextSize(res_str);
-		font->drawText(res_str, { center - text_size.x / 2.0f, bar_pos.y - 3.0f }, g_text_colors.at(16));
-	}
 }
 
 void HDText::drawPlayerHealthBar(d2::UnitAny* unit)
