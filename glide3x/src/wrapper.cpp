@@ -19,17 +19,136 @@
 #include "pch.h"
 #include "wrapper.h"
 #include "d2/common.h"
+#include "d2/funcs.h"
 #include "helpers.h"
 #include "modules/motion_prediction.h"
 #include "win32.h"
+
+#include <cstdarg>
+#include <cstdio>
 
 namespace d2gl {
 
 std::unique_ptr<Wrapper> GlideWrapper;
 
+// [TU_FIX] Lightweight log for the texture-cache coherency workaround. Only
+// exceptional events (stale cel invalidations) are written; one line per
+// event, capped per process.
+namespace {
+
+FILE* g_tu_diag_file = nullptr;
+uint32_t g_tu_diag_lines = 0;
+
+void tu_diag(const char* format, ...)
+{
+	if (g_tu_diag_lines > 1000)
+		return;
+	if (!g_tu_diag_file) {
+		if (fopen_s(&g_tu_diag_file, "d2gl_texdiag.log", "a") != 0 || !g_tu_diag_file) {
+			g_tu_diag_file = nullptr;
+			return;
+		}
+	}
+
+	va_list args;
+	va_start(args, format);
+	SYSTEMTIME st;
+	GetLocalTime(&st);
+	fprintf(g_tu_diag_file, "[%02d:%02d:%02d.%03d] ", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+	vfprintf(g_tu_diag_file, format, args);
+	va_end(args);
+	fputc('\n', g_tu_diag_file);
+	fflush(g_tu_diag_file);
+	g_tu_diag_lines++;
+}
+
+// [TU_FIX] D2Glide keeps a per-cel record of the texture-memory slot it last
+// used (the structure addressed by *(GfxCell + 0x18)). When that memory is
+// handed to another cel the record goes stale, and the cel keeps sampling
+// whatever texture now lives there. Track which address each cel used and, if
+// the content behind it changed, invalidate the record so D2Glide reallocates
+// and re-uploads on the next draw.
+struct TuCellTextureState {
+	uint32_t address = 0;
+	uint32_t hash = 0;
+};
+
+std::unordered_map<uint32_t, TuCellTextureState> g_tu_cell_state;  // key: GfxCell*
+bool g_tu_in_cell_draw = false;
+uint32_t g_tu_cell_draw_address = 0;
+uint32_t g_tu_cell_draw_size = 0;
+
+void tu_cell_draw_begin(d2::CellContext* cell)
+{
+	(void)cell;
+	g_tu_in_cell_draw = true;
+	g_tu_cell_draw_address = 0;
+	g_tu_cell_draw_size = 0;
+}
+
+void tu_cell_draw_end(d2::CellContext* cell, int draw_mode)
+{
+	g_tu_in_cell_draw = false;
+
+	// Only small sprites (UI buttons, item icons) are worth the bookkeeping;
+	// large panels and world tiles are drawn constantly and never go stale long
+	// enough for this to matter.
+	if (!cell || !g_tu_cell_draw_address || g_tu_cell_draw_size > 64)
+		return;
+
+	d2::GfxCell* gfx = d2::getGfxCell(cell);
+	if (!gfx)
+		return;
+
+	const uint32_t key = (uint32_t)(uintptr_t)gfx;
+	const auto hash_it = g_glide_texture.hash.find(g_tu_cell_draw_address);
+	const uint32_t hash = hash_it != g_glide_texture.hash.end() ? hash_it->second : 0;
+
+	const auto state_it = g_tu_cell_state.find(key);
+	const bool stolen = state_it != g_tu_cell_state.end() && state_it->second.address == g_tu_cell_draw_address && state_it->second.hash != hash;
+
+	g_tu_cell_state[key] = { g_tu_cell_draw_address, hash };
+
+	if (!stolen)
+		return;
+
+	uint32_t* pparent = *reinterpret_cast<uint32_t**>(reinterpret_cast<uint8_t*>(gfx) + 0x18);
+	if (!pparent)
+		return;
+
+	const uint32_t mode = draw_mode == 7 ? 2 : 1;
+	uint32_t* pair = pparent + mode * 2;
+	const uint32_t cell_class = pair[0];
+	const uint32_t cell_index = pair[1];
+
+	static uint32_t stale_logs = 0;
+	if (stale_logs++ < 50)
+		tu_diag("CELL-STALE gfx=%08X pparent=%08X mode=%u class=%u index=%u addr=%08X", key, (uint32_t)(uintptr_t)pparent, mode, cell_class,
+				cell_index, g_tu_cell_draw_address);
+
+	// Only touch the record when it looks like D2Glide's cache pair; anything
+	// else means the layout assumption does not hold for this cel.
+	if (cell_class >= 1 && cell_class <= 3 && cell_index < (1u << 20) && (uintptr_t)pparent >= 0x10000 && (uintptr_t)pparent < 0x80000000u) {
+		pair[1] = 0;
+		if (stale_logs <= 50)
+			tu_diag("CELL-CLEAR gfx=%08X mode=%u", key, mode);
+	}
+}
+
+}  // namespace
+
 Wrapper::Wrapper()
 	: ctx(App.context.get())
 {
+	// [TU_DIAG] Fresh logs per process; texture_manager.cpp appends to its own
+	// file (see tu2_diag).
+	DeleteFileA("d2gl_texdiag.log");
+	DeleteFileA("d2gl_tm.log");
+
+	d2::cellDrawBegin = &tu_cell_draw_begin;
+	d2::cellDrawEnd = &tu_cell_draw_end;
+	g_tu_cell_state.clear();
+
 	g_glide_texture.memory = new uint8_t[GLIDE_TEX_MEMORY * GLIDE_MAX_NUM_TMU];
 
 	SubTextureCounts sub_texture_counts = { { 256, 256 }, { 128, 154 }, { 64, 64 }, { 32, 32 }, { 16, 5 }, { 8, 1 } };
@@ -197,6 +316,14 @@ void Wrapper::grTexSource(GrChipID_t tmu, FxU32 start_address, GrTexInfo* info)
 	uint32_t size = Wrapper::getTexSize(info, width, height);
 	start_address += GLIDE_TEX_MEMORY * tmu;
 
+	// [TU_FIX] Remember which texture-memory address this draw actually sampled;
+	// tu_cell_draw_end compares it with the cel's previous draw to notice that
+	// the address has been recycled behind D2Glide's back.
+	if (g_tu_in_cell_draw) {
+		g_tu_cell_draw_address = start_address;
+		g_tu_cell_draw_size = size;
+	}
+
 	const auto frame_index = ctx->getFrameIndex();
 	const auto frame_count = ctx->getFrameCount();
 	const auto sub_tex_info = m_texture_manager->getSubTextureInfo(start_address, size, width, height, frame_count);
@@ -215,6 +342,40 @@ void Wrapper::grTexDownloadMipMap(GrChipID_t tmu, FxU32 start_address, GrTexInfo
 
 	memcpy(g_glide_texture.memory + start_address, info->data, width * height);
 	g_glide_texture.hash[start_address] = helpers::hash(info->data, width * height);
+	g_glide_texture.size[start_address] = (uint16_t)size;
+
+	// [TU_FIX] Keep a CPU-side copy of small textures. If D2Glide later recycles
+	// this address while a cell still points at it, the old pixels can be
+	// restored without depending on the atlas slot still existing.
+	if (size <= 64) {
+		const uint64_t key = (uint64_t(start_address) << 32) | size;
+		auto it = g_glide_texture.backup.find(key);
+		if (it == g_glide_texture.backup.end()) {
+			g_glide_texture.backup_order.push_back(key);
+			it = g_glide_texture.backup.insert({ key, {} }).first;
+		} else {
+			g_glide_texture.backup_bytes -= it->second.data.size();
+		}
+
+		it->second.size = (uint16_t)size;
+		it->second.width = (uint16_t)width;
+		it->second.height = (uint16_t)height;
+		it->second.hash = g_glide_texture.hash[start_address];
+		const uint8_t* pixels = (const uint8_t*)info->data;
+		it->second.data.assign(pixels, pixels + width * height);
+		g_glide_texture.backup_bytes += it->second.data.size();
+
+		const size_t max_backup_bytes = 64u * 1024 * 1024;
+		while (g_glide_texture.backup_bytes > max_backup_bytes && !g_glide_texture.backup_order.empty()) {
+			const uint64_t old_key = g_glide_texture.backup_order.front();
+			g_glide_texture.backup_order.pop_front();
+			const auto old_it = g_glide_texture.backup.find(old_key);
+			if (old_it != g_glide_texture.backup.end()) {
+				g_glide_texture.backup_bytes -= old_it->second.data.size();
+				g_glide_texture.backup.erase(old_it);
+			}
+		}
+	}
 }
 
 void Wrapper::grTexDownloadTable(void* data)

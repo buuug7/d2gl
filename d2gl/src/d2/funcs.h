@@ -50,6 +50,12 @@ BYTE getItemLocation(UnitAny* unit);
 
 CellFile* getCellFile(CellContext* cell);
 DWORD getCellNo(CellContext* cell);
+GfxCell* getGfxCell(CellContext* cell);
+
+// [TU_FIX] Optional per-draw observers. They stay null in builds that do not
+// need texture-cache coherency (e.g. the ddraw wrapper).
+extern void (*cellDrawBegin)(CellContext* cell);
+extern void (*cellDrawEnd)(CellContext* cell, int draw_mode);
 
 void gameDrawBegin();
 void automapDrawBegin();

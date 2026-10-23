@@ -182,6 +182,20 @@ DWORD getCellNo(CellContext* cell)
 	return cell->v109.nCellNo;
 }
 
+GfxCell* getGfxCell(CellContext* cell)
+{
+	if (isVerMin(V_113c))
+		return cell->v113.pCurGfxCell;
+	else if (isVer(V_112))
+		return cell->v112.pCurGfxCell;
+	else if (isVerMin(V_111))
+		return cell->v111.pCurGfxCell;
+	return cell->v109.pCurGfxCell;
+}
+
+void (*cellDrawBegin)(CellContext* cell) = nullptr;
+void (*cellDrawEnd)(CellContext* cell, int draw_mode) = nullptr;
+
 void gameDrawBegin()
 {
 	if (App.game.screen == GameScreen::Loading || App.game.screen == GameScreen::Menu)
@@ -225,7 +239,11 @@ void __stdcall drawImageHooked(CellContext* cell, int x, int y, uint32_t gamma, 
 
 	if (modules::HDText::Instance().drawImage(cell, x, y, draw_mode)) {
 		const auto pos = modules::MotionPrediction::Instance().drawImage(x, y, D2DrawFn::Image, gamma, draw_mode);
+		if (cellDrawBegin)
+			cellDrawBegin(cell);
 		drawImage(cell, pos.x, pos.y, gamma, draw_mode, palette);
+		if (cellDrawEnd)
+			cellDrawEnd(cell, draw_mode);
 	}
 
 	modules::HDText::drawItemQuantity(true);
