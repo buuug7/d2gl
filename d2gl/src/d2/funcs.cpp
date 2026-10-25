@@ -472,20 +472,20 @@ void levelEntryText()
 
 namespace {
 
-constexpr int TC_COUNT = 1014;
+// Runtime TC index = row in TreasureClassEx.txt + ~161 (indices 1-160 are the
+// base item-type TCs). Vanilla 1.13c tops out at 1014, but a mod that appends
+// rows pushes its own TCs past that, so keep room for a much larger table and
+// only compute the entries we actually look at.
+constexpr int TC_MAX_INDEX = 4096;
 
 struct MonsterTcInfo {
-	WORD wGroup = 0;
-	WORD wLevel = 0;
 	int nTc = 0;
 	int nRtc = 0;
 	bool init = false;
 	bool visiting = false;
 };
 
-MonsterTcInfo g_monster_tcs[TC_COUNT];
-bool g_tc_init = false;
-WORD g_tc_group_offset = 0;
+MonsterTcInfo g_monster_tcs[TC_MAX_INDEX];
 
 int getRuneTc(DWORD item_no)
 {
@@ -497,19 +497,22 @@ int getRuneTc(DWORD item_no)
 	return rune_no / 2 + rune_no % 2;
 }
 
-void calculateHighestTc(int tcno)
+MonsterTcInfo* getTcInfo(int tcno)
 {
+	if (tcno <= 0 || tcno >= TC_MAX_INDEX)
+		return nullptr;
+
 	auto& info = g_monster_tcs[tcno];
-	if (info.visiting)
-		return;
+	if (info.init || info.visiting)
+		return &info;
 
 	const auto tc = getTreasureClasses((WORD)tcno, 0);
-	if (!tc)
-		return;
+	if (!tc) {
+		info.init = true;
+		return &info;
+	}
 
 	info.visiting = true;
-	info.wLevel = tc->wLevel;
-	info.wGroup = tc->wGroup == 0 ? 0 : tc->wGroup - g_tc_group_offset;
 
 	for (DWORD i = 0; i < tc->dwItemNums; i++) {
 		const auto& item = tc->pItems[i];
@@ -519,13 +522,14 @@ void calculateHighestTc(int tcno)
 				const int tc_level = (((item.dwThingNo - 1) % 32) + 1) * 3;
 				if (group_no == 1 && tc_level > info.nTc)
 					info.nTc = tc_level;
-			} else if (item.dwThingNo < TC_COUNT) {
-				if (!g_monster_tcs[item.dwThingNo].init)
-					calculateHighestTc(item.dwThingNo);
-				if (g_monster_tcs[item.dwThingNo].nTc > info.nTc)
-					info.nTc = g_monster_tcs[item.dwThingNo].nTc;
-				if (g_monster_tcs[item.dwThingNo].nRtc > info.nRtc)
-					info.nRtc = g_monster_tcs[item.dwThingNo].nRtc;
+			} else if (item.dwThingNo > 0) {
+				const auto child = getTcInfo((int)item.dwThingNo);
+				if (child) {
+					if (child->nTc > info.nTc)
+						info.nTc = child->nTc;
+					if (child->nRtc > info.nRtc)
+						info.nRtc = child->nRtc;
+				}
 			}
 		} else {
 			const int rune_tc = getRuneTc(item.dwThingNo);
@@ -536,55 +540,54 @@ void calculateHighestTc(int tcno)
 
 	info.visiting = false;
 	info.init = true;
+	return &info;
 }
 
-void initTcList()
-{
-	if (g_tc_init)
-		return;
-
-	const auto tc = getTreasureClasses(262, 0);
-	if (!tc)
-		return;
-
-	g_tc_group_offset = tc->wGroup - 2;
-	for (int i = 1; i < TC_COUNT; i++)
-		calculateHighestTc(i);
-
-	g_tc_init = true;
-}
-
+// Walk up to the highest TC in the same group whose level is still <= mlvl.
+// Group/level are read live: the engine renumbers group ids as rooms change,
+// so cached copies could disagree with the current table.
 const MonsterTcInfo* getTcLevel(WORD tcno, DWORD mlvl)
 {
-	int idx = tcno;
-	if (idx >= TC_COUNT)
+	auto info = getTcInfo((int)tcno);
+	if (!info)
 		return nullptr;
 
-	if (g_monster_tcs[idx].wGroup > 0 && mlvl > g_monster_tcs[idx].wLevel) {
-		const WORD group = g_monster_tcs[idx].wGroup;
-		while (idx + 1 < TC_COUNT && g_monster_tcs[idx + 1].wGroup == group) {
-			idx++;
-			if (mlvl <= g_monster_tcs[idx].wLevel)
-				break;
-		}
+	int idx = tcno;
+	for (int guard = 0; guard < 256; guard++) {
+		const auto cur = getTreasureClasses((WORD)idx, 0);
+		if (!cur || cur->wGroup == 0 || mlvl <= cur->wLevel)
+			break;
+
+		const auto next_tc = getTreasureClasses((WORD)(idx + 1), 0);
+		if (!next_tc || next_tc->wGroup != cur->wGroup)
+			break;
+
+		const auto next = getTcInfo(idx + 1);
+		if (!next)
+			break;
+
+		idx++;
+		info = next;
 	}
-	return &g_monster_tcs[idx];
+	return info;
 }
 
 }
 
 bool getMonsterTreasureClass(UnitAny* unit, int& tc, int& rtc)
 {
+	tc = 0;
+	rtc = 0;
+
 	if (!getTreasureClasses || !getItemTxt || !getLevelTxt || !getSuperUniqueTxt || !expansion || !difficulty)
 		return false;
 	if (isVer(V_109d) || !unit || unit->dwType != UnitType::Monster)
 		return false;
 
-	initTcList();
-	if (!g_tc_init)
+	const auto mon = unit->v110.pMonsterData;
+	if (!mon)
 		return false;
 
-	const auto mon = unit->v110.pMonsterData;
 	const auto mon_txt = mon->pMonStatsTxt;
 	if (!mon_txt)
 		return false;
@@ -616,19 +619,20 @@ bool getMonsterTreasureClass(UnitAny* unit, int& tc, int& rtc)
 	WORD tcno;
 	if (mon->fSuperUniq) {
 		const auto super_unique = getSuperUniqueTxt(mon->wUniqueNo);
-		if (!super_unique)
-			return false;
-		tcno = super_unique->Tcs[diff];
+		tcno = super_unique ? super_unique->Tcs[diff] : 0;
 	} else {
 		const int mode = mon->fChamp ? 1 : ((mon->fBoss || mon->fMinion) ? 2 : 0);
 		tcno = mon_txt->Tcs[diff][mode];
 	}
-	if (tcno == 0 || tcno >= TC_COUNT)
-		return false;
+
+	// No TC for this difficulty/mode (and any index outside the runtime table)
+	// still reports 0/0, the way d2hackmap displays it.
+	if (tcno == 0)
+		return true;
 
 	const auto info = getTcLevel(tcno, (DWORD)lvl);
 	if (!info)
-		return false;
+		return true;
 
 	tc = info->nTc;
 	rtc = info->nRtc;
