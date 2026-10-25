@@ -245,6 +245,8 @@ void saveIni()
 		"show_monster_res=%s\n\n"
 		"; Show monster treasure class and rune treasure class on hp bar.\n"
 		"show_monster_tc=%s\n\n"
+		"; Show monster level on hp bar.\n"
+		"show_monster_level=%s\n\n"
 		"; Show FPS Counter (bottom center).\n"
 		"show_fps=%s\n\n\n";
 
@@ -264,6 +266,7 @@ void saveIni()
 		boolString(App.show_item_quantity),
 		boolString(App.show_monster_res),
 		boolString(App.show_monster_tc),
+		boolString(App.show_monster_level),
 		boolString(App.show_fps));
 	out_file << buf;
 
@@ -367,6 +370,7 @@ void loadIni()
 		App.show_item_quantity = getBool("Feature", "show_item_quantity", App.show_item_quantity);
 		App.show_monster_res = getBool("Feature", "show_monster_res", App.show_monster_res);
 		App.show_monster_tc = getBool("Feature", "show_monster_tc", App.show_monster_tc);
+		App.show_monster_level = getBool("Feature", "show_monster_level", App.show_monster_level);
 		App.show_fps = getBool("Feature", "show_fps", App.show_fps);
 
 		App.gl_ver.x = getInt("Other", "gl_ver_major", App.gl_ver.x, 3, 4);

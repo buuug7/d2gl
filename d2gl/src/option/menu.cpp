@@ -489,6 +489,9 @@ void Menu::draw()
 			drawCheckbox_m("No Pickup", App.no_pickup, "启动时自动运行 /nopickup 选项 (不包括1.09d)", no_pickup)
 				saveBool("Feature", "no_pickup", App.no_pickup);
 			drawSeparator();
+			drawCheckbox_m("显示怪物等级", App.show_monster_level, "在怪物生命条上显示怪物等级 (L)", show_monster_level)
+				saveBool("Feature", "show_monster_level", App.show_monster_level);
+			drawSeparator();
 			drawCheckbox_m("显示怪物抗性", App.show_monster_res, "在怪物生命条上显示抗性", show_monster_res)
 				saveBool("Feature", "show_monster_res", App.show_monster_res);
 			drawSeparator();

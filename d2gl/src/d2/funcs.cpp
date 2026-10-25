@@ -574,6 +574,48 @@ const MonsterTcInfo* getTcLevel(WORD tcno, DWORD mlvl)
 
 }
 
+// Monster level as d2hackmap shows it: the area level for normal monsters
+// (when area levels apply), otherwise the unit's own level stat, plus the
+// champion/unique bonus. Returns -1 when it cannot be determined.
+int getMonsterLevel(UnitAny* unit)
+{
+	if (isVer(V_109d) || !unit || unit->dwType != UnitType::Monster)
+		return -1;
+
+	const auto mon = unit->v110.pMonsterData;
+	if (!mon)
+		return -1;
+
+	const auto mon_txt = mon->pMonStatsTxt;
+	if (!mon_txt)
+		return -1;
+
+	const int diff = difficulty ? (int)*difficulty : 0;
+	const int exp = expansion ? (int)*expansion : 0;
+	if (diff < 0 || diff > 2 || exp < 0 || exp > 1)
+		return -1;
+
+	const bool txt_boss = (mon_txt->nFlags & 0x40) != 0;
+	int lvl;
+	if (!txt_boss && diff && exp && level_no && getLevelTxt) {
+		const auto level_txt = getLevelTxt((DWORD)*level_no);
+		lvl = level_txt ? (int)level_txt->nMonLv[exp][diff] : (int)getUnitStat(unit, STAT_LEVEL);
+	} else {
+		lvl = (int)getUnitStat(unit, STAT_LEVEL);
+	}
+
+	const bool skip_level_bonus = txt_boss && mon->wUniqueNo == 0 && !(mon_txt->hcIdx >= 546 && mon_txt->hcIdx <= 550);
+	if (!skip_level_bonus) {
+		if (mon->fChamp)
+			lvl += 2;
+		else if (mon->fBoss || mon->fMinion)
+			lvl += 3;
+	}
+	if (lvl < 0)
+		lvl = 0;
+	return lvl;
+}
+
 bool getMonsterTreasureClass(UnitAny* unit, int& tc, int& rtc)
 {
 	tc = 0;
@@ -593,28 +635,12 @@ bool getMonsterTreasureClass(UnitAny* unit, int& tc, int& rtc)
 		return false;
 
 	const int diff = (int)*difficulty;
-	const int exp = (int)*expansion;
-	if (diff < 0 || diff > 2 || exp < 0 || exp > 1)
+	if (diff < 0 || diff > 2)
 		return false;
 
-	const bool txt_boss = (mon_txt->nFlags & 0x40) != 0;
-	int lvl;
-	if (!txt_boss && diff && exp) {
-		const auto level_txt = getLevelTxt((DWORD)*level_no);
-		lvl = level_txt ? (int)level_txt->nMonLv[exp][diff] : (int)getUnitStat(unit, STAT_LEVEL);
-	} else {
-		lvl = (int)getUnitStat(unit, STAT_LEVEL);
-	}
-
-	const bool skip_level_bonus = txt_boss && mon->wUniqueNo == 0 && !(mon_txt->hcIdx >= 546 && mon_txt->hcIdx <= 550);
-	if (!skip_level_bonus) {
-		if (mon->fChamp)
-			lvl += 2;
-		else if (mon->fBoss || mon->fMinion)
-			lvl += 3;
-	}
+	const int lvl = getMonsterLevel(unit);
 	if (lvl < 0)
-		lvl = 0;
+		return false;
 
 	WORD tcno;
 	if (mon->fSuperUniq) {

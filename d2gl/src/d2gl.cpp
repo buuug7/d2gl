@@ -36,6 +36,7 @@ __declspec(dllexport) BOOL __stdcall d2glConfigQueryImpl(D2GLConfigId config_id)
 		case D2GL_CONFIG_SHOW_MONSTER_RES: return d2gl::App.show_monster_res;
 		case D2GL_CONFIG_SHOW_FPS: return d2gl::App.show_fps;
 		case D2GL_CONFIG_SHOW_MONSTER_TC: return d2gl::App.show_monster_tc;
+		case D2GL_CONFIG_SHOW_MONSTER_LEVEL: return d2gl::App.show_monster_level;
 	}
 	return FALSE;
 }
